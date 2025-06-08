@@ -2,15 +2,18 @@
 
 // Import required modules
 const express = require('express');
-const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 
+// .env (dotenv) set-up
+dotenv.config();
+
 // Initialize Express app
+const dotenv = require('dotenv');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 // Middleware setup
-app.use(bodyParser.json());
+app.use(express.json());
 
 // Sample in-memory products database
 let products = [
@@ -40,6 +43,22 @@ let products = [
   }
 ];
 
+// Logger Middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Authentication Middleware
+const authMiddleware = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader === 'Bearer secrettoken') {
+    next();
+  } else {
+    res.status(401).json({ message: 'Unauthorized' });
+  }
+};
+
 // Root route
 app.get('/', (req, res) => {
   res.send('Welcome to the Product API! Go to /api/products to see all products.');
@@ -57,10 +76,67 @@ app.get('/api/products', (req, res) => {
   res.json(products);
 });
 
+// GET /api/products/:id - Get a specific product
+app.get('/api/products/:id', (req, res) => {
+  const product = products.find(p => p.id === req.params.id);
+  if (!product) return res.status(404).json({ message: 'Product not found' });
+  res.json(product);
+});
+
+// POST /api/products - Create a new product
+app.post('/api/products', authMiddleware, (req, res) => {
+  try {
+    console.log('Received body:', req.body);
+    const { name, description, price, category, inStock } = req.body;
+    if (!name || !description || typeof price !== 'number') {
+      return res.status(400).json({ message: 'Invalid product data' });
+    }
+
+    const newProduct = {
+      id: uuidv4(),
+      name,
+      description,
+      price,
+      category,
+      inStock: Boolean(inStock)
+    };
+
+    products.push(newProduct);
+    res.status(201).json(newProduct);
+  } catch (error) {
+    console.error('Error in POST /api/products:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// PUT /api/products/:id - Update a product
+app.put('/api/products/:id', authMiddleware, (req, res) => {
+  const productIndex = products.findIndex(p => p.id === req.params.id);
+  if (productIndex === -1) return res.status(404).json({ message: 'Product not found' });
+
+  const updatedData = req.body;
+  products[productIndex] = { ...products[productIndex], ...updatedData };
+  res.json(products[productIndex]);
+});
+
+// DELETE /api/products/:id - Delete a product
+app.delete('/api/products/:id', authMiddleware,  (req, res) => {
+  const index = products.findIndex(p => p.id === req.params.id);
+  if (index === -1) return res.status(404).json({ message: 'Product not found' });
+
+  products.splice(index, 1);
+  res.status(204).send();
+});
+
+
 // TODO: Implement custom middleware for:
 // - Request logging
-// - Authentication
+
 // - Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something broke!' });
+});
 
 // Start the server
 app.listen(PORT, () => {
